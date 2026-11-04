@@ -81,9 +81,9 @@ class SFCard extends HTMLElement {
     this.setAttribute("theme", this._theme());
     let inner;
     try {
-      const tag = this.tag ? this.tag() : null;
+      const tag = this.tag ? this.tag() : null, ttl = this.title() || "";
       inner = `<div class="hud"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
-        <div class="head"><span class="grow">${sfEsc(this.title())}</span>${tag ? `<span class="tag ${tag.cls}">${sfEsc(tag.text)}</span>` : ""}</div>${this.body()}</div>`;
+        ${ttl || tag ? `<div class="head"><span class="grow">${sfEsc(ttl)}</span>${tag ? `<span class="tag ${tag.cls}">${sfEsc(tag.text)}</span>` : ""}</div>` : ""}${this.body()}</div>`;
     } catch (e) { inner = `<div class="hud"><div class="err">${sfEsc(this.constructor.name)}: ${sfEsc(e && e.message)}</div></div>`; }
     root.innerHTML = `<style>${SF_BASE_CSS}${this.css || ""}</style>${inner}`;
     if (keep) { const n = root.getElementById(keep.id); if (n) { if (n.value !== undefined && n.tagName === "INPUT" && n.type !== "range") n.value = keep.value; n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch (e) { /* not a text input */ } } }
