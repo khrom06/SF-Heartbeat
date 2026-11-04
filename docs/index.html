@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SF Heartbeat — live demo (fake data)</title>
+<style>body{margin:0;padding:24px;background:#0a1220;font-family:system-ui,sans-serif;color:#cfefff}
+h1{font:700 14px Orbitron,sans-serif;letter-spacing:.2em;color:#00e5ff} .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;max-width:1000px}
+.l{background:#e9f1f8;padding:14px;border-radius:14px}</style>
+<h1>SF HEARTBEAT · DEMO WITH FAKE DATA</h1>
+<div class="g" id="g"></div>
+<script src="sf-heartbeat.js"></script>
+<script>
+const iso = (s) => new Date(Date.now() - s * 1000).toISOString();
+const st = (id, state, a = {}, age = 30) => ({ entity_id: id, state: String(state), attributes: a, last_changed: iso(age), last_updated: iso(age), last_reported: iso(age) });
+const states = {};
+[st("sensor.nursery_temperature", 18.2, { friendly_name: "Nursery temperature" }, 5 * 3600 + 700),
+ st("sensor.bedroom_temperature", 20.6, { friendly_name: "Bedroom temperature" }, 90),
+ st("sensor.garage_door", "unavailable", { friendly_name: "Garage door contact" }, 26 * 3600),
+ st("sensor.fridge_probe", 4.1, { friendly_name: "Fridge probe" }, 2.6 * 3600),
+ st("sensor.hall_motion_battery", 11, { friendly_name: "Hall motion battery", device_class: "battery" }),
+ st("sensor.outdoor_battery", 15, { friendly_name: "Outdoor thermometer battery", device_class: "battery" }),
+].forEach((s) => (states[s.entity_id] = s));
+const hass = { states, language: "en", themes: { darkMode: true } };
+const mk = (cfg, light) => { const w = document.createElement("div"); if (light) w.className = "l"; const el = document.createElement("sf-heartbeat-card"); w.appendChild(el); el.setConfig(cfg); el.hass = { ...hass, themes: { darkMode: !light } }; document.getElementById("g").appendChild(w); };
+const watch = ["sensor.nursery_temperature", "sensor.bedroom_temperature", "sensor.fridge_probe", "sensor.garage_door"];
+mk({ watch, title: "Sensor heartbeat" }); mk({ watch, title: "Sensor heartbeat", theme: "light" }, true);
+mk({ watch: ["sensor.bedroom_temperature"], scan_unavailable: false, battery_threshold: 0 });
+</script></html>

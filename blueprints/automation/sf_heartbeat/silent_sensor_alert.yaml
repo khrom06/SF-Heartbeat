@@ -1,0 +1,117 @@
+blueprint:
+  name: "SF Heartbeat: silent sensor alert"
+  description: >-
+    Runs your actions when watched sensors go silent, when they all come back, and (optionally) as a periodic reminder while some are still silent.
+    Nothing is sent by the blueprint itself: you decide what happens in the action blocks (notification, TTS, persistent notification...).
+
+    Variables available inside your actions: `event` (silent | recovered | reminder), `silent_count`, `silent_names` (comma separated),
+    `silent_list` (list of {entity, name, reason, minutes}; reason is stale | unavailable | missing).
+
+    The alert fires once per episode (template triggers only fire on a false -> true change), so it cannot loop or spam.
+    Part of SF Heartbeat, https://github.com/khrom06/SF-Heartbeat
+  domain: automation
+  author: khrom06
+  source_url: https://github.com/khrom06/SF-Heartbeat/blob/main/blueprints/automation/sf_heartbeat/silent_sensor_alert.yaml
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    watched:
+      name: Entities to watch
+      description: >-
+        Sensors that must keep reporting. An entity counts as silent when it is unavailable/unknown, does not exist,
+        or has not reported for longer than the maximum silence below. The "not reported" test is what catches Zigbee/radio
+        failures: those sensors keep their last value and never turn unavailable.
+      selector:
+        entity:
+          multiple: true
+    max_silence:
+      name: Maximum silence
+      description: Hours without any report before an entity counts as silent. Pick a value above the slowest reporting interval of the watched entities.
+      default: 2
+      selector:
+        number:
+          min: 0.25
+          max: 72
+          step: 0.25
+          unit_of_measurement: h
+          mode: box
+    grace_minutes:
+      name: Grace period
+      description: Minutes the condition must hold before the alert fires. Ignores the gaps seen right after a Home Assistant or broker restart.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+          mode: box
+    on_alert:
+      name: Actions on alert, recovery and reminder
+      description: Runs for all three events; test `event` to tell them apart.
+      default: []
+      selector:
+        action: {}
+    reminder_hours:
+      name: Reminder every N hours (0 = no reminder)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 24
+          mode: box
+
+mode: queued
+max: 5
+max_exceeded: silent
+
+trigger_variables:
+  watched: !input watched
+  limit_h: !input max_silence
+
+triggers:
+  - trigger: template
+    id: silent
+    value_template: >-
+      {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n > 0 }}
+    for:
+      minutes: !input grace_minutes
+  - trigger: template
+    id: recovered
+    value_template: >-
+      {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n == 0 }}
+    for:
+      minutes: 2
+  - trigger: time_pattern
+    id: reminder
+    hours: "/1"
+    minutes: 0
+    seconds: 0
+
+variables:
+  watched: !input watched
+  limit_h: !input max_silence
+  reminder_hours: !input reminder_hours
+  event: "{{ trigger.id }}"
+  silent_list: >-
+          {% set ns = namespace(l=[]) %}
+          {% for e in watched %}
+            {% set s = states[e] %}
+            {% if s is none %}
+              {% set ns.l = ns.l + [{'entity': e, 'name': e, 'reason': 'missing', 'minutes': none}] %}
+            {% elif s.state in ['unavailable', 'unknown'] %}
+              {% set ns.l = ns.l + [{'entity': e, 'name': s.name, 'reason': 'unavailable', 'minutes': ((now() - s.last_reported).total_seconds() / 60) | round(0)}] %}
+            {% elif (now() - s.last_reported).total_seconds() > limit_h * 3600 %}
+              {% set ns.l = ns.l + [{'entity': e, 'name': s.name, 'reason': 'stale', 'minutes': ((now() - s.last_reported).total_seconds() / 60) | round(0)}] %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.l }}
+  silent_count: "{{ silent_list | count }}"
+  silent_names: "{{ silent_list | map(attribute='name') | join(', ') }}"
+
+actions:
+  - alias: A reminder only runs when enabled, on its hour, and while something is still silent
+    condition: template
+    value_template: >-
+      {{ event != 'reminder' or (reminder_hours | int(0) > 0 and now().hour % (reminder_hours | int(1)) == 0 and silent_count > 0) }}
+  - alias: Your actions
+    sequence: !input on_alert

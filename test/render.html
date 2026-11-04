@@ -1,0 +1,63 @@
+<!doctype html><meta charset="utf-8"><body><pre id="result">pending</pre>
+<script src="lib.js"></script><script src="../dist/sf-heartbeat.js"></script>
+<script>
+(async () => {
+  const { check, eq, state, ago, hass, mount, text, q, done } = T, H = window.__sfHeartbeat;
+  const cfg = (o) => ({ watch: [], ignore: [], max_silence: 2, scan_unavailable: true, battery_threshold: 20, domains: ["sensor", "binary_sensor", "switch"], ...o });
+  const now = Date.now();
+
+  // --- logic ---
+  const S = Object.fromEntries([
+    state("sensor.fresh", 20, {}, { last_reported: ago(60) }),
+    state("sensor.stale", 18, {}, { last_reported: ago(3 * 3600) }),
+    state("sensor.edge_under", 18, {}, { last_reported: ago(1.9 * 3600) }),
+    state("sensor.gone", "unavailable", {}, { last_reported: ago(5 * 3600) }),
+    state("sensor.bat_low", 9, { device_class: "battery" }), state("sensor.bat_ok", 80, { device_class: "battery" }),
+    state("update.x", "unavailable"), state("sensor.noisy_unavail", "unavailable"),
+  ].map((s) => [s.entity_id, s]));
+  let r = H.classify(S, cfg({ watch: ["sensor.fresh", "sensor.stale", "sensor.edge_under", "sensor.gone", "sensor.nope"] }), now);
+  eq(r.silent.map((s) => s.id + ":" + s.reason).sort(), ["sensor.gone:unavailable", "sensor.noisy_unavail:unavailable", "sensor.nope:missing", "sensor.stale:stale"], "silent set");
+  eq(r.low.map((l) => l.id), ["sensor.bat_low"], "low battery");
+  check(!r.silent.some((s) => s.id === "update.x"), "update.* is never reported");
+  r = H.classify(S, cfg({ watch: ["sensor.stale"], scan_unavailable: false }), now);
+  eq(r.silent.map((s) => s.id), ["sensor.stale"], "scan off");
+  r = H.classify(S, cfg({ watch: [{ entity: "sensor.stale", max_silence: 4 }], scan_unavailable: false }), now);
+  eq(r.silent.length, 0, "per-entity limit overrides the default");
+  r = H.classify(S, cfg({ watch: ["sensor.stale"], ignore: ["stale"] }), now);
+  check(!r.silent.some((s) => s.id === "sensor.stale"), "ignore pattern");
+  r = H.classify(S, cfg({ ignore: ["("] , scan_unavailable: true }), now);
+  check(r.silent.length >= 1, "an invalid ignore regex does not break the logic");
+  eq(H.classify({}, cfg({}), now).silent.length, 0, "empty states");
+
+  // --- card ---
+  let h = hass([state("sensor.fresh", 20, { friendly_name: "Fresh" }, { last_reported: ago(30) })]);
+  let el = mount("sf-heartbeat-card", { watch: ["sensor.fresh"] }, h);
+  check(text(el).includes("All sensors reporting"), "all-clear message");
+  check(q(el, ".tag.ok").length === 1, "OK tag");
+
+  h = hass([state("sensor.zb", 18.2, { friendly_name: "Baby room <b>thermo</b>" }, { last_reported: ago(5 * 3600) }), state("sensor.low", 7, { device_class: "battery", friendly_name: "Door" })]);
+  el = mount("sf-heartbeat-card", { watch: ["sensor.zb"] }, h);
+  check(text(el).includes("no report for 5 h"), "stale age shown: " + text(el));
+  check(q(el, ".tag.bad").length === 1 && text(el).includes("1 silent"), "bad tag");
+  check(text(el).includes("Low batteries") && text(el).includes("7 %"), "battery section");
+  check(el.shadowRoot.innerHTML.includes("&lt;b&gt;thermo"), "friendly names are escaped");
+  check(!el.shadowRoot.querySelector("b"), "no injected markup");
+  let got = null; el.addEventListener("hass-more-info", (e) => { got = e.detail.entityId; });
+  q(el, '[data-act="info"]')[0].click(); eq(got, "sensor.zb", "row click opens more-info");
+
+  // no re-render when nothing relevant changed (stops render storms from the 'hass' setter)
+  let renders = 0; const orig = el._draw.bind(el); el._draw = () => { renders++; orig(); };
+  for (let i = 0; i < 50; i++) { const h2 = hass([...Object.values(h.states), state("sensor.other" + i, i)]); el.hass = h2; }
+  eq(renders, 0, "unrelated state changes never re-render");
+
+  // light theme + language + invalid config
+  el = mount("sf-heartbeat-card", { watch: ["sensor.zb"], theme: "light" }, Object.assign(hass([]), { language: "fr" }));
+  eq(el.getAttribute("theme"), "light", "theme attribute"); check(text(el).includes("introuvable"), "French translation: " + text(el));
+  let threw = false; try { mount("sf-heartbeat-card", "oops"); } catch (e) { threw = true; } check(threw, "invalid config rejected");
+  el = mount("sf-heartbeat-card", { watch: "not-a-list", max_silence: -3 }, hass([])); check(text(el).includes("All sensors"), "bad values fall back to defaults");
+  // many rows are capped
+  const many = hass(Array.from({ length: 30 }, (_, i) => state("sensor.s" + i, "unavailable")));
+  el = mount("sf-heartbeat-card", { max_rows: 5 }, many); eq(q(el, ".row").length, 5, "row cap"); check(text(el).includes("+25 more"), "overflow label");
+  done();
+})().catch((e) => { document.getElementById("result").textContent = JSON.stringify({ ok: false, checks: 0, failures: ["exception: " + e.message] }); });
+</script>

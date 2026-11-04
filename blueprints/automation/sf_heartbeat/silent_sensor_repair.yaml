@@ -1,0 +1,139 @@
+blueprint:
+  name: "SF Heartbeat: graded repair for silent sensors"
+  description: >-
+    When watched sensors stay silent, runs a repair in steps and checks after each one whether the sensors came back:
+    step 1 (e.g. restart the Zigbee radio), wait, step 2 (e.g. restart Zigbee2MQTT), wait, then a final "repair failed" action
+    (e.g. a notification).
+
+    Loop safety: the automation runs in single mode (a repair in progress is never restarted), it fires once per silence episode,
+    and a cooldown (default 3 h) prevents a new repair right after the last one even if the sensors flap.
+    Part of SF Heartbeat, https://github.com/khrom06/SF-Heartbeat
+  domain: automation
+  author: khrom06
+  source_url: https://github.com/khrom06/SF-Heartbeat/blob/main/blueprints/automation/sf_heartbeat/silent_sensor_repair.yaml
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    watched:
+      name: Entities to watch
+      description: >-
+        Sensors that must keep reporting. An entity counts as silent when it is unavailable/unknown, does not exist,
+        or has not reported for longer than the maximum silence below. The "not reported" test is what catches Zigbee/radio
+        failures: those sensors keep their last value and never turn unavailable.
+      selector:
+        entity:
+          multiple: true
+    max_silence:
+      name: Maximum silence
+      description: Hours without any report before an entity counts as silent. Pick a value above the slowest reporting interval of the watched entities.
+      default: 2
+      selector:
+        number:
+          min: 0.25
+          max: 72
+          step: 0.25
+          unit_of_measurement: h
+          mode: box
+    grace_minutes:
+      name: Wait before repairing
+      description: Minutes the sensors must stay silent before the first repair step. Ignores restart gaps.
+      default: 7
+      selector:
+        number:
+          min: 2
+          max: 120
+          unit_of_measurement: min
+          mode: box
+    step_1:
+      name: Repair step 1
+      description: First, gentlest action (e.g. press the restart button of the Zigbee coordinator).
+      default: []
+      selector:
+        action: {}
+    step_2:
+      name: Repair step 2
+      description: Second action, only if the sensors are still silent after step 1 (e.g. restart the Zigbee2MQTT app).
+      default: []
+      selector:
+        action: {}
+    wait_minutes:
+      name: Wait after each step
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+          mode: box
+    on_failure:
+      name: Actions when the repair did not help
+      default: []
+      selector:
+        action: {}
+    cooldown_hours:
+      name: Cooldown between repairs
+      description: No new repair is started sooner than this after the previous one.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 72
+          unit_of_measurement: h
+          mode: box
+
+mode: single
+max_exceeded: silent
+
+trigger_variables:
+  watched: !input watched
+  limit_h: !input max_silence
+
+triggers:
+  - trigger: template
+    value_template: >-
+      {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n > 0 }}
+    for:
+      minutes: !input grace_minutes
+
+conditions:
+  - alias: Cooldown (evaluated before this run updates last_triggered)
+    condition: template
+    value_template: >-
+      {{ this.attributes.last_triggered is none
+         or (now() - this.attributes.last_triggered).total_seconds() > (cooldown_hours | float(3)) * 3600 }}
+
+variables:
+  watched: !input watched
+  limit_h: !input max_silence
+  cooldown_hours: !input cooldown_hours
+  wait_minutes: !input wait_minutes
+
+actions:
+  - alias: Step 1
+    sequence: !input step_1
+  - alias: Wait for recovery after step 1
+    wait_template: >-
+      {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n == 0 }}
+    timeout: "{{ (wait_minutes | int(10)) * 60 }}"
+    continue_on_timeout: true
+  - alias: Still silent after step 1?
+    if:
+      - condition: template
+        value_template: >-
+          {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n > 0 }}
+    then:
+      - alias: Step 2
+        sequence: !input step_2
+      - alias: Wait for recovery after step 2
+        wait_template: >-
+          {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n == 0 }}
+        timeout: "{{ (wait_minutes | int(10)) * 60 }}"
+        continue_on_timeout: true
+      - alias: Still silent after step 2?
+        if:
+          - condition: template
+            value_template: >-
+              {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n > 0 }}
+        then:
+          - alias: Repair failed
+            sequence: !input on_failure
