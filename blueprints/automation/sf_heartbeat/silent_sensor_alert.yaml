@@ -45,6 +45,16 @@ blueprint:
           max: 60
           unit_of_measurement: min
           mode: box
+    recover_minutes:
+      name: Recovery delay
+      description: Minutes everything must keep reporting before the "recovered" event fires (avoids a flapping sensor producing alert/recovery pairs).
+      default: 2
+      selector:
+        number:
+          min: 0.5
+          max: 60
+          unit_of_measurement: min
+          mode: box
     on_alert:
       name: Actions on alert, recovery and reminder
       description: Runs for all three events; test `event` to tell them apart.
@@ -80,7 +90,7 @@ triggers:
     value_template: >-
       {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n == 0 }}
     for:
-      minutes: 2
+      minutes: !input recover_minutes
   - trigger: time_pattern
     id: reminder
     hours: "/1"

@@ -11,6 +11,7 @@ const SF_BASE_CSS = `
   :host { display:block; ${SF_VARS_DARK} }
   :host([theme="light"]) { ${SF_VARS_LIGHT} }
   * { box-sizing:border-box; }
+  :host([dir="rtl"]) .hud { direction:rtl; } :host([dir="rtl"]) svg, :host([dir="rtl"]) .track, :host([dir="rtl"]) input[type=range] { direction:ltr; }
   .hud { position:relative; overflow:hidden; border-radius:14px; padding:16px 18px 18px; color:var(--sf-text);
     background: radial-gradient(ellipse at 50% -20%, var(--sf-bg0) 0%, var(--sf-bg1) 60%, var(--sf-bg2) 100%);
     border:1px solid rgb(var(--sf-cyan-rgb) / .22); font-family:'B612 Mono', ui-monospace, monospace; font-size:13px;
@@ -42,7 +43,8 @@ const sfLang = (hass) => String((hass && (hass.locale?.language || hass.language
 // Translation lookup with English fallback: sfT(dict, lang, key, {n: 3}) replaces {n}.
 const sfT = (dict, lang, key, vars) => {
   let s = (dict[lang] && dict[lang][key]) ?? (dict.en && dict.en[key]) ?? key;
-  if (vars) for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(String(vars[k]));
+  // In right-to-left text, numbers with Latin units are isolated so "5 min" is not scrambled by the bidi algorithm.
+  if (vars) for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(lang === "ar" ? "\u2066" + vars[k] + "\u2069" : String(vars[k]));
   return s;
 };
 // Human duration from seconds: "45 s", "12 min", "3 h 05", "2 d 4 h".
@@ -70,13 +72,15 @@ class SFCard extends HTMLElement {
   get hass() { return this._hass; }
   connectedCallback() { if (this.tick && !this._timer) this._timer = setInterval(() => this._draw(), this.tick); }
   disconnectedCallback() { if (this._timer) { clearInterval(this._timer); this._timer = null; } }
+  // Language: the card's own `language` option wins, otherwise the Home Assistant UI language (first two letters, e.g. zh-Hans -> zh).
+  _lang() { const o = this._cfg && this._cfg.language; return typeof o === "string" && o ? o.slice(0, 2).toLowerCase() : sfLang(this._hass); }
   getCardSize() { return 3; }
   _theme() { const t = this._cfg && this._cfg.theme; if (t === "light" || t === "dark") return t; return this._hass && this._hass.themes && this._hass.themes.darkMode === false ? "light" : "dark"; }
   _draw() {
     if (!this._cfg) return;
     const root = this.shadowRoot, ae = root.activeElement;
     const keep = ae && ae.id ? { id: ae.id, value: ae.value, s: ae.selectionStart, e: ae.selectionEnd } : null;
-    this.setAttribute("theme", this._theme());
+    this.setAttribute("theme", this._theme()); this.setAttribute("dir", this._lang() === "ar" ? "rtl" : "ltr");
     let inner;
     try {
       const tag = this.tag ? this.tag() : null, ttl = this.title() || "";

@@ -1,0 +1,36 @@
+name: E2E on a real Home Assistant
+# Starts a real Home Assistant in a container, creates automations from the blueprints and drives them through the real REST API
+# (helpers act as fake sensors and loads). Runs on every change to the blueprints or the tests; can also be started by hand.
+on:
+  push:
+    paths: ["blueprints/**", "test/e2e/**", ".github/workflows/ha-e2e.yml"]
+  pull_request:
+    paths: ["blueprints/**", "test/e2e/**", ".github/workflows/ha-e2e.yml"]
+  workflow_dispatch:
+    inputs:
+      ha_version:
+        description: "Home Assistant image tag (e.g. stable, beta, 2026.10)"
+        default: "stable"
+permissions: {}
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Prepare the Home Assistant configuration
+        run: |
+          mkdir -p ha-config/blueprints/automation
+          cp test/e2e/ha-config.yaml ha-config/configuration.yaml
+          echo "[]" > ha-config/automations.yaml
+          cp -r blueprints/automation/* ha-config/blueprints/automation/
+          docker run --rm --entrypoint python3 -v "$PWD/ha-config:/config" "ghcr.io/home-assistant/home-assistant:${{ inputs.ha_version || 'stable' }}" -m homeassistant --script auth -c /config add ci ci-pass
+      - name: Start Home Assistant
+        run: docker run -d --name ha -p 8123:8123 -v "$PWD/ha-config:/config" "ghcr.io/home-assistant/home-assistant:${{ inputs.ha_version || 'stable' }}"
+      - name: End-to-end test
+        run: node test/e2e/heartbeat.mjs
+      - name: Home Assistant log (on failure)
+        if: failure()
+        run: docker logs ha 2>&1 | tail -80

@@ -1,0 +1,38 @@
+# Minimal Home Assistant configuration for the end-to-end tests (no default_config: fast start, no network integrations).
+homeassistant:
+  name: E2E
+  latitude: 48.85
+  longitude: 2.35
+  unit_system: metric
+  time_zone: UTC
+http:
+  server_port: 8123
+api:
+config:
+automation: !include automations.yaml
+input_boolean:
+  e2e_alive:
+    initial: true
+  e2e_alive2:
+    initial: true
+  e2e_step1:
+  e2e_step2:
+  e2e_failed:
+  e2e_step2b:
+  e2e_failed2:
+counter:
+  e2e_silent:
+  e2e_recovered:
+input_text:
+  e2e_names:
+    max: 255
+template:
+  - sensor:
+      - name: "E2E Probe"
+        unique_id: e2e_probe
+        state: "21"
+        availability: "{{ is_state('input_boolean.e2e_alive', 'on') }}"
+      - name: "E2E Probe 2"
+        unique_id: e2e_probe2
+        state: "21"
+        availability: "{{ is_state('input_boolean.e2e_alive2', 'on') }}"

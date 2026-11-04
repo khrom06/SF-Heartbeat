@@ -48,7 +48,7 @@ theme: auto                      # auto | dark | light
 
 * **Silent** = unavailable / unknown / not found, or (for `watch`) no report for longer than `max_silence`.
 * `scan_unavailable` skips domains that are unavailable by design (`update`, `button`, `device_tracker`, `person`…).
-* Languages: en, fr, de, es (follows the Home Assistant language).
+* Languages: en, fr, es, de, nl, it, pt, pl, ru, zh, ar (right-to-left for Arabic), the same eleven as SF Cards. The card follows the Home Assistant language; set `language: xx` on a card to force one.
 * Cost: it re-renders only when the *set* of silent entities changes, plus a 60 s timer to keep the ages current. A busy instance does not make it redraw.
 
 ## The blueprints
@@ -67,16 +67,19 @@ theme: auto                      # auto | dark | light
 ### Loop and spam safety (by design)
 
 * Both blueprints use **template triggers**, which fire only when the condition changes from false to true — not on every evaluation.
-* A configurable **grace period** ignores the gaps that follow a Home Assistant or broker restart.
+* A configurable **grace period** (and a *recovery delay* before the "recovered" event) ignores the gaps that follow a Home Assistant or broker restart.
 * The repair runs in `single` mode with a **cooldown** (default 3 h) checked before each run, so flapping sensors cannot trigger a restart loop.
 * Nothing is sent or restarted unless *you* put it in an action block.
 
 ## Tests
 
 ```bash
-./test/run.sh                                   # build check + 23 render checks in headless Chrome (fake Home Assistant data)
+./test/run.sh   # build check, 282 render checks in headless Chrome (all 11 languages, fake data) and offline blueprint checks
 HA_URL=... HA_TOKEN=... python3 test/blueprint_templates.py   # optional: renders the blueprint templates on a real instance (read-only)
+node test/e2e/heartbeat.mjs                                    # full run on a throw-away Home Assistant
 ```
+
+The end-to-end test (also run in GitHub Actions, `ha-e2e.yml`, against the official container) creates both blueprints as automations on a real Home Assistant and makes a sensor go silent: a flap shorter than the grace period fires nothing, a real silence raises exactly one alert, the repair escalates step 1 → step 2 → failure, the cooldown blocks a second repair, a repair that works stops the escalation.
 
 ---
 

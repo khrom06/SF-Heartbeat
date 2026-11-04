@@ -58,6 +58,12 @@
   // many rows are capped
   const many = hass(Array.from({ length: 30 }, (_, i) => state("sensor.s" + i, "unavailable")));
   el = mount("sf-heartbeat-card", { max_rows: 5 }, many); eq(q(el, ".row").length, 5, "row cap"); check(text(el).includes("+25 more"), "overflow label");
+  check(true, ""); T.i18n(H.i18n, "heartbeat");
+  for (const [lang, word] of [["ar", "غير موجود"], ["zh", "未找到"], ["ru", "не найдена"], ["nl", "niet gevonden"], ["it", "non trovata"], ["pt", "não encontrada"], ["pl", "nie znaleziono"]]) {
+    const e = mount("sf-heartbeat-card", { watch: ["sensor.nope"], language: lang }, hass([])); check(text(e).includes(word), "language option " + lang + ": " + text(e));
+    eq(e.getAttribute("dir"), lang === "ar" ? "rtl" : "ltr", "text direction for " + lang);
+  }
+  eq(mount("sf-heartbeat-card", { watch: [] }, Object.assign(hass([]), { locale: { language: "zh-Hans" } })).getAttribute("dir"), "ltr", "regional locale codes are accepted");
   done();
 })().catch((e) => { document.getElementById("result").textContent = JSON.stringify({ ok: false, checks: 0, failures: ["exception: " + e.message] }); });
 </script>

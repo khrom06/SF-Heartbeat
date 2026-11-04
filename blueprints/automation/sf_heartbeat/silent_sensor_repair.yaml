@@ -114,7 +114,7 @@ actions:
   - alias: Wait for recovery after step 1
     wait_template: >-
       {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n == 0 }}
-    timeout: "{{ (wait_minutes | int(10)) * 60 }}"
+    timeout: "{{ (wait_minutes | float(10)) * 60 }}"
     continue_on_timeout: true
   - alias: Still silent after step 1?
     if:
@@ -127,7 +127,7 @@ actions:
       - alias: Wait for recovery after step 2
         wait_template: >-
           {% set ns = namespace(n=0) %}{% for e in watched %}{% set s = states[e] %}{% if s is none or s.state in ['unavailable', 'unknown'] or (now() - s.last_reported).total_seconds() > limit_h * 3600 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{ ns.n == 0 }}
-        timeout: "{{ (wait_minutes | int(10)) * 60 }}"
+        timeout: "{{ (wait_minutes | float(10)) * 60 }}"
         continue_on_timeout: true
       - alias: Still silent after step 2?
         if:

@@ -13,6 +13,7 @@ const SF_BASE_CSS = `
   :host { display:block; ${SF_VARS_DARK} }
   :host([theme="light"]) { ${SF_VARS_LIGHT} }
   * { box-sizing:border-box; }
+  :host([dir="rtl"]) .hud { direction:rtl; } :host([dir="rtl"]) svg, :host([dir="rtl"]) .track, :host([dir="rtl"]) input[type=range] { direction:ltr; }
   .hud { position:relative; overflow:hidden; border-radius:14px; padding:16px 18px 18px; color:var(--sf-text);
     background: radial-gradient(ellipse at 50% -20%, var(--sf-bg0) 0%, var(--sf-bg1) 60%, var(--sf-bg2) 100%);
     border:1px solid rgb(var(--sf-cyan-rgb) / .22); font-family:'B612 Mono', ui-monospace, monospace; font-size:13px;
@@ -44,7 +45,8 @@ const sfLang = (hass) => String((hass && (hass.locale?.language || hass.language
 // Translation lookup with English fallback: sfT(dict, lang, key, {n: 3}) replaces {n}.
 const sfT = (dict, lang, key, vars) => {
   let s = (dict[lang] && dict[lang][key]) ?? (dict.en && dict.en[key]) ?? key;
-  if (vars) for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(String(vars[k]));
+  // In right-to-left text, numbers with Latin units are isolated so "5 min" is not scrambled by the bidi algorithm.
+  if (vars) for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(lang === "ar" ? "\u2066" + vars[k] + "\u2069" : String(vars[k]));
   return s;
 };
 // Human duration from seconds: "45 s", "12 min", "3 h 05", "2 d 4 h".
@@ -72,13 +74,15 @@ class SFCard extends HTMLElement {
   get hass() { return this._hass; }
   connectedCallback() { if (this.tick && !this._timer) this._timer = setInterval(() => this._draw(), this.tick); }
   disconnectedCallback() { if (this._timer) { clearInterval(this._timer); this._timer = null; } }
+  // Language: the card's own `language` option wins, otherwise the Home Assistant UI language (first two letters, e.g. zh-Hans -> zh).
+  _lang() { const o = this._cfg && this._cfg.language; return typeof o === "string" && o ? o.slice(0, 2).toLowerCase() : sfLang(this._hass); }
   getCardSize() { return 3; }
   _theme() { const t = this._cfg && this._cfg.theme; if (t === "light" || t === "dark") return t; return this._hass && this._hass.themes && this._hass.themes.darkMode === false ? "light" : "dark"; }
   _draw() {
     if (!this._cfg) return;
     const root = this.shadowRoot, ae = root.activeElement;
     const keep = ae && ae.id ? { id: ae.id, value: ae.value, s: ae.selectionStart, e: ae.selectionEnd } : null;
-    this.setAttribute("theme", this._theme());
+    this.setAttribute("theme", this._theme()); this.setAttribute("dir", this._lang() === "ar" ? "rtl" : "ltr");
     let inner;
     try {
       const tag = this.tag ? this.tag() : null, ttl = this.title() || "";
@@ -152,6 +156,13 @@ const HB_I18N = {
         batt: "Schwache Batterien", more: "+{n} weitere", watching: "{n} überwacht" },
   es: { title: "Pulso de sensores", ok: "Todos los sensores responden", silent: "mudo(s)", nominal: "{n} vigilados · todos responden", stale: "sin informe desde hace {age}", unavailable: "no disponible", missing: "entidad no encontrada",
         batt: "Pilas bajas", more: "+{n} más", watching: "{n} vigilados" },
+  nl: {"title": "Hartslag van sensoren", "ok": "Alle sensoren melden zich", "silent": "stil", "nominal": "{n} bewaakt · alle melden zich", "stale": "geen melding sinds {age}", "unavailable": "niet beschikbaar", "missing": "entiteit niet gevonden", "batt": "Lage batterijen", "more": "+{n} meer", "watching": "{n} bewaakt"},
+  it: {"title": "Battito dei sensori", "ok": "Tutti i sensori rispondono", "silent": "muto/i", "nominal": "{n} monitorati · tutti rispondono", "stale": "nessun rapporto da {age}", "unavailable": "non disponibile", "missing": "entità non trovata", "batt": "Batterie scariche", "more": "+{n} altri", "watching": "{n} monitorati"},
+  pt: {"title": "Pulso dos sensores", "ok": "Todos os sensores respondem", "silent": "mudo(s)", "nominal": "{n} monitorizados · todos respondem", "stale": "sem relatório há {age}", "unavailable": "indisponível", "missing": "entidade não encontrada", "batt": "Pilhas fracas", "more": "+{n} mais", "watching": "{n} monitorizados"},
+  pl: {"title": "Puls czujników", "ok": "Wszystkie czujniki odpowiadają", "silent": "milczy", "nominal": "{n} monitorowanych · wszystkie odpowiadają", "stale": "brak raportu od {age}", "unavailable": "niedostępny", "missing": "nie znaleziono encji", "batt": "Słabe baterie", "more": "+{n} więcej", "watching": "{n} monitorowanych"},
+  ru: {"title": "Пульс датчиков", "ok": "Все датчики отвечают", "silent": "молчат", "nominal": "{n} под наблюдением · все отвечают", "stale": "нет данных уже {age}", "unavailable": "недоступен", "missing": "сущность не найдена", "batt": "Слабые батареи", "more": "ещё {n}", "watching": "{n} под наблюдением"},
+  zh: {"title": "传感器心跳", "ok": "所有传感器均在上报", "silent": "静默", "nominal": "监控 {n} 个 · 全部正常上报", "stale": "已 {age} 无上报", "unavailable": "不可用", "missing": "未找到实体", "batt": "电量低的电池", "more": "另有 {n} 个", "watching": "监控 {n} 个"},
+  ar: {"title": "نبض المستشعرات", "ok": "جميع المستشعرات تعمل", "silent": "صامت", "nominal": "{n} قيد المراقبة · الكل يرسل بياناته", "stale": "لا تقرير منذ {age}", "unavailable": "غير متوفر", "missing": "الكيان غير موجود", "batt": "بطاريات ضعيفة", "more": "+{n} أخرى", "watching": "{n} قيد المراقبة"},
 };
 
 class SFHeartbeatCard extends SFCard {
@@ -166,8 +177,8 @@ class SFHeartbeatCard extends SFCard {
   _res() { return hbClassify(this._hass ? this._hass.states : {}, this._cfg); }
   // Signature: ids + reasons + coarse state of what matters; ages are refreshed by the 60 s timer, so a stream of state changes elsewhere never re-renders.
   signature() { const r = this._res(); return r.silent.map((s) => s.id + ":" + s.reason).join("|") + "#" + r.low.map((l) => l.id + ":" + l.pct).join("|") + this._theme(); }
-  title() { return this._cfg.title || sfT(HB_I18N, sfLang(this._hass), "title"); }
-  tag() { const r = this._res(), L = sfLang(this._hass); return r.silent.length ? { cls: "bad", text: r.silent.length + " " + sfT(HB_I18N, L, "silent") } : { cls: "ok", text: "OK" }; }
+  title() { return this._cfg.title || sfT(HB_I18N, this._lang(), "title"); }
+  tag() { const r = this._res(), L = this._lang(); return r.silent.length ? { cls: "bad", text: r.silent.length + " " + sfT(HB_I18N, L, "silent") } : { cls: "ok", text: "OK" }; }
   get css() { return `
     .pulse { display:block; width:100%; height:46px; margin:-4px 0 10px; } .pulse path { fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
     .pulse.ok path { stroke:var(--sf-green); filter:drop-shadow(0 0 4px rgb(var(--sf-green-rgb) / .7)); stroke-dasharray:240; animation:beat 2.6s linear infinite; }
@@ -182,7 +193,7 @@ class SFHeartbeatCard extends SFCard {
     .sub { margin:12px 0 4px; font-family:Orbitron, ui-sans-serif, sans-serif; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--sf-amber); }
     .more { padding:6px 4px; color:var(--sf-dim); font-size:11px; }`; }
   body() {
-    const r = this._res(), L = sfLang(this._hass), t = (k, v) => sfT(HB_I18N, L, k, v), max = this._cfg.max_rows;
+    const r = this._res(), L = this._lang(), t = (k, v) => sfT(HB_I18N, L, k, v), max = this._cfg.max_rows;
     const ECG = "M0 24 H70 L82 24 L90 8 L100 40 L108 24 H150 L160 24 L168 14 L176 34 L184 24 H240";
     let h = `<svg class="pulse ${r.silent.length ? "bad" : "ok"}" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"><path d="${ECG}"/></svg>`;
     if (!r.silent.length && !r.low.length) return h + `<div class="empty">${sfEsc(t("ok"))}<br><small>${sfEsc(t("nominal", { n: r.total }))}</small></div>`;
@@ -195,6 +206,6 @@ class SFHeartbeatCard extends SFCard {
   onAct(el) { if (el.dataset.act === "info") sfMoreInfo(this, el.dataset.id); }
 }
 sfRegister("sf-heartbeat-card", SFHeartbeatCard, "SF Heartbeat", "Lists sensors that stopped reporting (stale, unavailable, missing) and low batteries.");
-window.__sfHeartbeat = { classify: hbClassify };   // exposed for the test page only
+window.__sfHeartbeat = { classify: hbClassify, i18n: HB_I18N };   // exposed for the test page only
 
 })();
