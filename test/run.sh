@@ -9,6 +9,7 @@ CHROME="$(command -v google-chrome || command -v chromium || command -v chromium
 node scripts/build.mjs --check || exit 1
 NAME="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("hacs.json","utf8")).filename)')"
 node --check "dist/$NAME" || { echo "FAIL: syntax of dist/$NAME"; exit 1; }
+node test/lint.js || exit 1
 [ ! -f test/extra.sh ] || bash test/extra.sh || exit 1
 OUT="$(timeout 120 "$CHROME" --headless=new --no-sandbox --disable-gpu --allow-file-access-from-files --virtual-time-budget=60000 --dump-dom "file://$PWD/test/render.html" 2>/dev/null)"
 RES="$(printf '%s' "$OUT" | grep -o '<pre id="result">[^<]*' | sed 's/<pre id="result">//' | sed 's/&quot;/"/g;s/&amp;/\&/g;s/&lt;/</g;s/&gt;/>/g')"

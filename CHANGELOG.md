@@ -4,6 +4,7 @@
 ### Changed
 - `dist/sf-heartbeat.js` (the file HACS loads) is now minified at build time (esbuild): ~17% smaller raw. No behaviour change — `src/` stays the readable source of truth; the 282 render checks pass unchanged.
 - The loaded file now prints its version to the console (`SF-HEARTBEAT v1.0.1`) and warns, instead of silently redefining the cards, if the resource is declared twice (HACS + a manual file) — same pattern as SF-Cards. Verified in a real browser: second load is ignored with a clear warning, version banner confirmed.
+- `test/lint.js` (new, run by `./test/run.sh`): reliability rules from SF-Cards, adapted — every `setInterval` kept in `this.X` has a matching `clearInterval`, and no hard-coded colour outside the theme tokens (`00-kit.js`). No existing violation (both checks pass clean); verified with a mutation test (an unmatched `setInterval` and a hard-coded colour injected in a scratch copy are both caught).
 
 ## [1.0.0] — 2026-11-04
 ### Added
