@@ -23,12 +23,14 @@ Same HUD look as [SF Cards](https://github.com/khrom06/SF-Cards): the cards sit 
 
 ## Install
 
-1. HACS → ⋮ → *Custom repositories* → add `https://github.com/khrom06/SF-Heartbeat`, category **Dashboard**; install.
+1. HACS → search for **SF Heartbeat** → *Download*.
 2. Reload the browser. HACS registers the resource `/hacsfiles/SF-Heartbeat/sf-heartbeat.js` for you.
 3. Blueprints (optional) — import with these buttons, or copy the files from `blueprints/automation/sf_heartbeat/`:
 
    [![Import alert blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fkhrom06%2FSF-Heartbeat%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fsf_heartbeat%2Fsilent_sensor_alert.yaml)
    [![Import repair blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fkhrom06%2FSF-Heartbeat%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fsf_heartbeat%2Fsilent_sensor_repair.yaml)
+
+Not listed yet in your HACS? Add it manually: HACS → ⋮ → *Custom repositories* → `https://github.com/khrom06/SF-Heartbeat`, category **Dashboard**, then install.
 
 ## The card
 
