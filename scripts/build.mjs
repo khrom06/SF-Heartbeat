@@ -10,11 +10,23 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const name = JSON.parse(fs.readFileSync(path.join(root, "hacs.json"), "utf8")).filename;
+const hacsInfo = JSON.parse(fs.readFileSync(path.join(root, "hacs.json"), "utf8"));
+const name = hacsInfo.filename;
+const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
+const flagVar = "SF_" + hacsInfo.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^SF_/, "") + "_VERSION"; // e.g. SF_HEARTBEAT_VERSION
+const consoleTag = hacsInfo.name.toUpperCase().replace(/\s+/g, "-"); // e.g. SF-HEARTBEAT
 const files = fs.readdirSync(path.join(root, "src")).filter((f) => f.endsWith(".js")).sort();
 if (!files.length) { console.error("build: src/ is empty"); process.exit(2); }
 const body = files.map((f) => fs.readFileSync(path.join(root, "src", f), "utf8")).join("");
-const wrapped = `(() => {\n"use strict";\n${body}\n})();\n`;
+// Version banner + duplicate-resource guard (same pattern as SF-Cards): if the resource is declared twice (HACS + manual file), the first
+// loaded version stays active and a clear console warning says so, instead of silently redefining the custom elements a second time.
+const wrapped = "if (window." + flagVar + ") {\n"
+  + "  console.warn(`" + hacsInfo.name + " ${window." + flagVar + "} is already loaded: this copy (v" + version + ") is ignored. Remove the duplicate resource (Settings → Dashboards → Resources).`);\n"
+  + "} else {\n"
+  + "window." + flagVar + " = \"" + version + "\";\n"
+  + "(() => {\n\"use strict\";\n" + body + "\n})();\n"
+  + "console.info(\"%c " + consoleTag + " %c v" + version + " \", \"color:#03080f;background:#00e5ff;font-weight:700\", \"color:#00e5ff;background:#03080f\");\n"
+  + "}\n";
 const result = esbuild.transformSync(wrapped, { minify: true, target: "es2020", loader: "js" });
 const out = Buffer.from(result.code, "utf8");
 const targets = [`dist/${name}`, `docs/${name}`];

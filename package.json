@@ -1,5 +1,6 @@
 {
   "name": "sf-heartbeat",
+  "version": "1.0.1",
   "private": true,
   "description": "Build tooling for SF-Heartbeat (no runtime dependency: HACS loads dist/sf-heartbeat.js directly, no bundler).",
   "scripts": {
