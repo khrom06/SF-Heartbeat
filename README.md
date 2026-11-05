@@ -3,6 +3,7 @@
 **Find the sensors that went quiet — before they cost you something.** A Lovelace card and two Home Assistant blueprints that catch the failure Home Assistant itself does not report: a sensor that is *still showing its last value* while the radio behind it is dead.
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![Live demo](https://img.shields.io/badge/live-demo-00e5ff)](https://khrom06.github.io/SF-Heartbeat/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Add to HACS](https://img.shields.io/badge/HACS-add%20this%20repository-00e5ff)](https://my.home-assistant.io/redirect/hacs_repository/?owner=khrom06&repository=SF-Heartbeat&category=dashboard)
 
