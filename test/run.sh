@@ -5,6 +5,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
 [ -n "$CHROME" ] || { echo "ERROR: google-chrome/chromium not found"; exit 2; }
+[ -d node_modules/esbuild ] || npm install --no-audit --no-fund || exit 1   # scripts/build.mjs needs esbuild (minification)
 node scripts/build.mjs --check || exit 1
 NAME="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("hacs.json","utf8")).filename)')"
 node --check "dist/$NAME" || { echo "FAIL: syntax of dist/$NAME"; exit 1; }

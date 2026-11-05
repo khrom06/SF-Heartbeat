@@ -1,17 +1,10 @@
-(() => {
-"use strict";
-// SF-kit 1.0 — shared design tokens and card base class. The same file ships in every SF-* card repository (keep them identical).
-// Visual language: the palette and HUD frame of SF-Cards (https://github.com/khrom06/SF-Cards), so cards from different repos sit side by side.
-const SF_VARS_DARK = `--sf-cyan:#00e5ff; --sf-amber:#ffb300; --sf-red:#ff3355; --sf-green:#2bff88; --sf-grey:#5b6b7d; --sf-text:#cfefff; --sf-dim:#7fa3bd;
+(()=>{"use strict";const y=`
+  :host { display:block; --sf-cyan:#00e5ff; --sf-amber:#ffb300; --sf-red:#ff3355; --sf-green:#2bff88; --sf-grey:#5b6b7d; --sf-text:#cfefff; --sf-dim:#7fa3bd;
     --sf-cyan-rgb:0 229 255; --sf-amber-rgb:255 179 0; --sf-red-rgb:255 51 85; --sf-green-rgb:43 255 136; --sf-fg-rgb:255 255 255; --sf-strong:#fff;
-    --sf-bg0:#0d2440; --sf-bg1:#06101d; --sf-bg2:#03080f; --sf-on-accent:#03080f; --sf-violet:#b388ff; --sf-violet-rgb:179 136 255;`;
-const SF_VARS_LIGHT = `--sf-cyan:#00798f; --sf-amber:#a85f00; --sf-red:#c8173d; --sf-green:#08783f; --sf-grey:#52687a; --sf-text:#1c3a4e; --sf-dim:#37536a;
+    --sf-bg0:#0d2440; --sf-bg1:#06101d; --sf-bg2:#03080f; --sf-on-accent:#03080f; --sf-violet:#b388ff; --sf-violet-rgb:179 136 255; }
+  :host([theme="light"]) { --sf-cyan:#00798f; --sf-amber:#a85f00; --sf-red:#c8173d; --sf-green:#08783f; --sf-grey:#52687a; --sf-text:#1c3a4e; --sf-dim:#37536a;
     --sf-cyan-rgb:0 121 143; --sf-amber-rgb:168 95 0; --sf-red-rgb:200 23 61; --sf-green-rgb:8 120 63; --sf-fg-rgb:4 40 62; --sf-strong:#04141f;
-    --sf-bg0:#fbfdff; --sf-bg1:#eef5fb; --sf-bg2:#e2edf6; --sf-on-accent:#fff; --sf-violet:#6a3bc4; --sf-violet-rgb:106 59 196;`;
-
-const SF_BASE_CSS = `
-  :host { display:block; ${SF_VARS_DARK} }
-  :host([theme="light"]) { ${SF_VARS_LIGHT} }
+    --sf-bg0:#fbfdff; --sf-bg1:#eef5fb; --sf-bg2:#e2edf6; --sf-on-accent:#fff; --sf-violet:#6a3bc4; --sf-violet-rgb:106 59 196; }
   * { box-sizing:border-box; }
   :host([dir="rtl"]) .hud { direction:rtl; } :host([dir="rtl"]) svg, :host([dir="rtl"]) .track, :host([dir="rtl"]) input[type=range] { direction:ltr; }
   .hud { position:relative; overflow:hidden; border-radius:14px; padding:16px 18px 18px; color:var(--sf-text);
@@ -37,149 +30,8 @@ const SF_BASE_CSS = `
   button:hover { background:rgb(var(--sf-cyan-rgb) / .2); }
   @media (pointer: coarse) { button, .row { min-height:40px; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
-`;
-
-const sfEsc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const sfNum = (v, d = NaN) => { const n = parseFloat(v); return Number.isFinite(n) ? n : d; };
-const sfLang = (hass) => String((hass && (hass.locale?.language || hass.language)) || "en").slice(0, 2).toLowerCase();
-// Translation lookup with English fallback: sfT(dict, lang, key, {n: 3}) replaces {n}.
-const sfT = (dict, lang, key, vars) => {
-  let s = (dict[lang] && dict[lang][key]) ?? (dict.en && dict.en[key]) ?? key;
-  // In right-to-left text, numbers with Latin units are isolated so "5 min" is not scrambled by the bidi algorithm.
-  if (vars) for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(lang === "ar" ? "\u2066" + vars[k] + "\u2069" : String(vars[k]));
-  return s;
-};
-// Human duration from seconds: "45 s", "12 min", "3 h 05", "2 d 4 h".
-const sfAge = (sec) => {
-  if (!Number.isFinite(sec) || sec < 0) return "–";
-  if (sec < 90) return Math.round(sec) + " s";
-  const m = Math.floor(sec / 60); if (m < 90) return m + " min";
-  const h = Math.floor(m / 60); if (h < 48) return h + " h " + String(m % 60).padStart(2, "0");
-  return Math.floor(h / 24) + " d " + (h % 24) + " h";
-};
-const sfName = (st, id) => (st && st.attributes && st.attributes.friendly_name) || id;
-const sfMoreInfo = (el, entityId) => el.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
-
-// Base class. Subclasses provide: normalize(config) -> config, signature() -> string (cheap; the card re-renders only when it changes),
-// body() -> html string, title(), tag() (optional {cls,text}), css (optional), onAct(el, ev) for [data-act] clicks, tick (ms, optional timer).
-// Re-rendering never loops: it happens on (a) a new signature, (b) setConfig, (c) the optional timer, nothing else.
-class SFCard extends HTMLElement {
-  constructor() {
-    super(); this.attachShadow({ mode: "open" }); this._cfg = null; this._hass = null; this._sig = null; this._timer = null;
-    this.shadowRoot.addEventListener("click", (ev) => { const el = ev.target.closest && ev.target.closest("[data-act]"); if (el && this.onAct) this.onAct(el, ev); });
-    this.shadowRoot.addEventListener("keydown", (ev) => { if ((ev.key === "Enter" || ev.key === " ") && ev.target.matches && ev.target.matches("[data-act][role=button]")) { ev.preventDefault(); ev.target.click(); } });
-  }
-  setConfig(c) { if (!c || typeof c !== "object") throw new Error("Invalid configuration"); this._cfg = this.normalize(c); this._sig = null; this._draw(); }
-  set hass(h) { this._hass = h; if (!this._cfg) return; const s = this.signature(); if (s !== this._sig) { this._sig = s; this._draw(); } }
-  get hass() { return this._hass; }
-  connectedCallback() { if (this.tick && !this._timer) this._timer = setInterval(() => this._draw(), this.tick); }
-  disconnectedCallback() { if (this._timer) { clearInterval(this._timer); this._timer = null; } }
-  // Language: the card's own `language` option wins, otherwise the Home Assistant UI language (first two letters, e.g. zh-Hans -> zh).
-  _lang() { const o = this._cfg && this._cfg.language; return typeof o === "string" && o ? o.slice(0, 2).toLowerCase() : sfLang(this._hass); }
-  getCardSize() { return 3; }
-  _theme() { const t = this._cfg && this._cfg.theme; if (t === "light" || t === "dark") return t; return this._hass && this._hass.themes && this._hass.themes.darkMode === false ? "light" : "dark"; }
-  _draw() {
-    if (!this._cfg) return;
-    const root = this.shadowRoot, ae = root.activeElement;
-    const keep = ae && ae.id ? { id: ae.id, value: ae.value, s: ae.selectionStart, e: ae.selectionEnd } : null;
-    this.setAttribute("theme", this._theme()); this.setAttribute("dir", this._lang() === "ar" ? "rtl" : "ltr");
-    let inner;
-    try {
-      const tag = this.tag ? this.tag() : null, ttl = this.title() || "";
-      inner = `<div class="hud"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
-        ${ttl || tag ? `<div class="head"><span class="grow">${sfEsc(ttl)}</span>${tag ? `<span class="tag ${tag.cls}">${sfEsc(tag.text)}</span>` : ""}</div>` : ""}${this.body()}</div>`;
-    } catch (e) { inner = `<div class="hud"><div class="err">${sfEsc(this.constructor.name)}: ${sfEsc(e && e.message)}</div></div>`; }
-    root.innerHTML = `<style>${SF_BASE_CSS}${this.css || ""}</style>${inner}`;
-    if (keep) { const n = root.getElementById(keep.id); if (n) { if (n.value !== undefined && n.tagName === "INPUT" && n.type !== "range") n.value = keep.value; n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch (e) { /* not a text input */ } } }
-  }
-}
-const sfRegister = (tag, cls, name, description) => {
-  if (!customElements.get(tag)) customElements.define(tag, cls);
-  window.customCards = window.customCards || [];
-  if (!window.customCards.some((c) => c.type === tag)) window.customCards.push({ type: tag, name, description, preview: false });
-};
-// Pure logic (no DOM): decides which entities are silent. Everything the card shows comes from classify().
-// "Silent" = the entity is unavailable/unknown/missing, or (for entities in `watch`) it has not reported for longer than max_silence.
-// Sensors on a Zigbee network keep their last value when the radio dies, so "unavailable" alone never catches that failure.
-const HB_SKIP_DOMAINS = new Set(["update", "button", "scene", "event", "conversation", "tts", "stt", "device_tracker", "person", "zone", "sun", "persistent_notification", "input_button", "automation", "script", "image", "camera", "notify", "todo", "calendar"]);
-
-function hbAgeSeconds(st, now) {
-  const t = Date.parse(st.last_reported || st.last_updated || st.last_changed || "");
-  return Number.isFinite(t) ? Math.max(0, (now - t) / 1000) : NaN;
-}
-
-function hbCompile(list) {
-  const out = [];
-  for (const p of list || []) { try { out.push(new RegExp(p, "i")); } catch (e) { /* ignore an invalid pattern rather than breaking the card */ } }
-  return out;
-}
-
-// cfg: { watch: [id | {entity, max_silence}], max_silence (hours), scan_unavailable, ignore: [regex], battery_threshold, domains }
-function hbClassify(states, cfg, now = Date.now()) {
-  const ignore = hbCompile(cfg.ignore), silent = [], low = [];
-  const limitDefault = cfg.max_silence * 3600;
-  const watched = new Map();
-  for (const w of cfg.watch) { const id = typeof w === "string" ? w : w.entity; if (id) watched.set(id, typeof w === "object" && w.max_silence > 0 ? w.max_silence * 3600 : limitDefault); }
-  let total = 0;
-  for (const [id, lim] of watched) {
-    if (ignore.some((r) => r.test(id))) continue;
-    total++;
-    const st = states[id];
-    if (!st) { silent.push({ id, name: id, reason: "missing", age: NaN }); continue; }
-    const age = hbAgeSeconds(st, now);
-    if (st.state === "unavailable" || st.state === "unknown") silent.push({ id, name: sfName(st, id), reason: "unavailable", age });
-    else if (age > lim) silent.push({ id, name: sfName(st, id), reason: "stale", age });
-  }
-  const domains = new Set(cfg.domains);
-  for (const id of Object.keys(states)) {
-    const st = states[id], dom = id.split(".")[0];
-    if (cfg.scan_unavailable && !watched.has(id) && domains.has(dom) && !HB_SKIP_DOMAINS.has(dom) && !ignore.some((r) => r.test(id))) {
-      total++;
-      if (st.state === "unavailable") silent.push({ id, name: sfName(st, id), reason: "unavailable", age: hbAgeSeconds(st, now) });
-    }
-    if (cfg.battery_threshold > 0 && dom === "sensor" && st.attributes && st.attributes.device_class === "battery" && !ignore.some((r) => r.test(id))) {
-      const pct = sfNum(st.state);
-      if (Number.isFinite(pct) && pct <= cfg.battery_threshold) low.push({ id, name: sfName(st, id), pct });
-    }
-  }
-  // Unavailable entities that are also stale are the same fault: oldest first so the longest-silent sensor leads.
-  silent.sort((a, b) => (Number.isFinite(b.age) ? b.age : 1e12) - (Number.isFinite(a.age) ? a.age : 1e12));
-  low.sort((a, b) => a.pct - b.pct);
-  return { silent, low, total };
-}
-const HB_I18N = {
-  en: { title: "Sensor heartbeat", ok: "All sensors reporting", silent: "silent", nominal: "{n} watched · all reporting", stale: "no report for {age}", unavailable: "unavailable", missing: "entity not found",
-        batt: "Low batteries", more: "+{n} more", watching: "{n} watched" },
-  fr: { title: "Pouls des capteurs", ok: "Tous les capteurs répondent", silent: "muet(s)", nominal: "{n} surveillés · tous répondent", stale: "aucun rapport depuis {age}", unavailable: "indisponible", missing: "entité introuvable",
-        batt: "Piles faibles", more: "+{n} autres", watching: "{n} surveillés" },
-  de: { title: "Sensor-Herzschlag", ok: "Alle Sensoren melden sich", silent: "stumm", nominal: "{n} überwacht · alle melden sich", stale: "kein Bericht seit {age}", unavailable: "nicht verfügbar", missing: "Entität nicht gefunden",
-        batt: "Schwache Batterien", more: "+{n} weitere", watching: "{n} überwacht" },
-  es: { title: "Pulso de sensores", ok: "Todos los sensores responden", silent: "mudo(s)", nominal: "{n} vigilados · todos responden", stale: "sin informe desde hace {age}", unavailable: "no disponible", missing: "entidad no encontrada",
-        batt: "Pilas bajas", more: "+{n} más", watching: "{n} vigilados" },
-  nl: {"title": "Hartslag van sensoren", "ok": "Alle sensoren melden zich", "silent": "stil", "nominal": "{n} bewaakt · alle melden zich", "stale": "geen melding sinds {age}", "unavailable": "niet beschikbaar", "missing": "entiteit niet gevonden", "batt": "Lage batterijen", "more": "+{n} meer", "watching": "{n} bewaakt"},
-  it: {"title": "Battito dei sensori", "ok": "Tutti i sensori rispondono", "silent": "muto/i", "nominal": "{n} monitorati · tutti rispondono", "stale": "nessun rapporto da {age}", "unavailable": "non disponibile", "missing": "entità non trovata", "batt": "Batterie scariche", "more": "+{n} altri", "watching": "{n} monitorati"},
-  pt: {"title": "Pulso dos sensores", "ok": "Todos os sensores respondem", "silent": "mudo(s)", "nominal": "{n} monitorizados · todos respondem", "stale": "sem relatório há {age}", "unavailable": "indisponível", "missing": "entidade não encontrada", "batt": "Pilhas fracas", "more": "+{n} mais", "watching": "{n} monitorizados"},
-  pl: {"title": "Puls czujników", "ok": "Wszystkie czujniki odpowiadają", "silent": "milczy", "nominal": "{n} monitorowanych · wszystkie odpowiadają", "stale": "brak raportu od {age}", "unavailable": "niedostępny", "missing": "nie znaleziono encji", "batt": "Słabe baterie", "more": "+{n} więcej", "watching": "{n} monitorowanych"},
-  ru: {"title": "Пульс датчиков", "ok": "Все датчики отвечают", "silent": "молчат", "nominal": "{n} под наблюдением · все отвечают", "stale": "нет данных уже {age}", "unavailable": "недоступен", "missing": "сущность не найдена", "batt": "Слабые батареи", "more": "ещё {n}", "watching": "{n} под наблюдением"},
-  zh: {"title": "传感器心跳", "ok": "所有传感器均在上报", "silent": "静默", "nominal": "监控 {n} 个 · 全部正常上报", "stale": "已 {age} 无上报", "unavailable": "不可用", "missing": "未找到实体", "batt": "电量低的电池", "more": "另有 {n} 个", "watching": "监控 {n} 个"},
-  ar: {"title": "نبض المستشعرات", "ok": "جميع المستشعرات تعمل", "silent": "صامت", "nominal": "{n} قيد المراقبة · الكل يرسل بياناته", "stale": "لا تقرير منذ {age}", "unavailable": "غير متوفر", "missing": "الكيان غير موجود", "batt": "بطاريات ضعيفة", "more": "+{n} أخرى", "watching": "{n} قيد المراقبة"},
-};
-
-class SFHeartbeatCard extends SFCard {
-  static getStubConfig() { return { watch: [], scan_unavailable: true, max_silence: 2 }; }
-  normalize(c) {
-    const hours = sfNum(c.max_silence, 2);
-    return { ...c, watch: Array.isArray(c.watch) ? c.watch : [], ignore: Array.isArray(c.ignore) ? c.ignore : [], max_silence: hours > 0 ? hours : 2,
-      scan_unavailable: c.scan_unavailable !== false, battery_threshold: sfNum(c.battery_threshold, 20), max_rows: Math.max(1, Math.round(sfNum(c.max_rows, 8))),
-      domains: Array.isArray(c.domains) && c.domains.length ? c.domains : ["sensor", "binary_sensor", "switch", "light", "climate", "cover", "lock", "fan", "media_player", "number", "select", "humidifier", "water_heater", "vacuum"] };
-  }
-  get tick() { return 60000; }          // ages move with time even when no state changes
-  _res() { return hbClassify(this._hass ? this._hass.states : {}, this._cfg); }
-  // Signature: ids + reasons + coarse state of what matters; ages are refreshed by the 60 s timer, so a stream of state changes elsewhere never re-renders.
-  signature() { const r = this._res(); return r.silent.map((s) => s.id + ":" + s.reason).join("|") + "#" + r.low.map((l) => l.id + ":" + l.pct).join("|") + this._theme(); }
-  title() { return this._cfg.title || sfT(HB_I18N, this._lang(), "title"); }
-  tag() { const r = this._res(), L = this._lang(); return r.silent.length ? { cls: "bad", text: r.silent.length + " " + sfT(HB_I18N, L, "silent") } : { cls: "ok", text: "OK" }; }
-  get css() { return `
+`,c=s=>String(s??"").replace(/[&<>"']/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[t]),b=(s,t=NaN)=>{const e=parseFloat(s);return Number.isFinite(e)?e:t},k=s=>String(s&&(s.locale?.language||s.language)||"en").slice(0,2).toLowerCase(),v=(s,t,e,n)=>{let r=(s[t]&&s[t][e])??(s.en&&s.en[e])??e;if(n)for(const i of Object.keys(n))r=r.split("{"+i+"}").join(t==="ar"?"\u2066"+n[i]+"\u2069":String(n[i]));return r},w=s=>{if(!Number.isFinite(s)||s<0)return"\u2013";if(s<90)return Math.round(s)+" s";const t=Math.floor(s/60);if(t<90)return t+" min";const e=Math.floor(t/60);return e<48?e+" h "+String(t%60).padStart(2,"0"):Math.floor(e/24)+" d "+e%24+" h"},u=(s,t)=>s&&s.attributes&&s.attributes.friendly_name||t,S=(s,t)=>s.dispatchEvent(new CustomEvent("hass-more-info",{detail:{entityId:t},bubbles:!0,composed:!0}));class A extends HTMLElement{constructor(){super(),this.attachShadow({mode:"open"}),this._cfg=null,this._hass=null,this._sig=null,this._timer=null,this.shadowRoot.addEventListener("click",t=>{const e=t.target.closest&&t.target.closest("[data-act]");e&&this.onAct&&this.onAct(e,t)}),this.shadowRoot.addEventListener("keydown",t=>{(t.key==="Enter"||t.key===" ")&&t.target.matches&&t.target.matches("[data-act][role=button]")&&(t.preventDefault(),t.target.click())})}setConfig(t){if(!t||typeof t!="object")throw new Error("Invalid configuration");this._cfg=this.normalize(t),this._sig=null,this._draw()}set hass(t){if(this._hass=t,!this._cfg)return;const e=this.signature();e!==this._sig&&(this._sig=e,this._draw())}get hass(){return this._hass}connectedCallback(){this.tick&&!this._timer&&(this._timer=setInterval(()=>this._draw(),this.tick))}disconnectedCallback(){this._timer&&(clearInterval(this._timer),this._timer=null)}_lang(){const t=this._cfg&&this._cfg.language;return typeof t=="string"&&t?t.slice(0,2).toLowerCase():k(this._hass)}getCardSize(){return 3}_theme(){const t=this._cfg&&this._cfg.theme;return t==="light"||t==="dark"?t:this._hass&&this._hass.themes&&this._hass.themes.darkMode===!1?"light":"dark"}_draw(){if(!this._cfg)return;const t=this.shadowRoot,e=t.activeElement,n=e&&e.id?{id:e.id,value:e.value,s:e.selectionStart,e:e.selectionEnd}:null;this.setAttribute("theme",this._theme()),this.setAttribute("dir",this._lang()==="ar"?"rtl":"ltr");let r;try{const i=this.tag?this.tag():null,d=this.title()||"";r=`<div class="hud"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+        ${d||i?`<div class="head"><span class="grow">${c(d)}</span>${i?`<span class="tag ${i.cls}">${c(i.text)}</span>`:""}</div>`:""}${this.body()}</div>`}catch(i){r=`<div class="hud"><div class="err">${c(this.constructor.name)}: ${c(i&&i.message)}</div></div>`}if(t.innerHTML=`<style>${y}${this.css||""}</style>${r}`,n){const i=t.getElementById(n.id);if(i){i.value!==void 0&&i.tagName==="INPUT"&&i.type!=="range"&&(i.value=n.value),i.focus();try{i.setSelectionRange(n.s,n.e)}catch{}}}}}const z=(s,t,e,n)=>{customElements.get(s)||customElements.define(s,t),window.customCards=window.customCards||[],window.customCards.some(r=>r.type===s)||window.customCards.push({type:s,name:e,description:n,preview:!1})},$=new Set(["update","button","scene","event","conversation","tts","stt","device_tracker","person","zone","sun","persistent_notification","input_button","automation","script","image","camera","notify","todo","calendar"]);function x(s,t){const e=Date.parse(s.last_reported||s.last_updated||s.last_changed||"");return Number.isFinite(e)?Math.max(0,(t-e)/1e3):NaN}function L(s){const t=[];for(const e of s||[])try{t.push(new RegExp(e,"i"))}catch{}return t}function _(s,t,e=Date.now()){const n=L(t.ignore),r=[],i=[],d=t.max_silence*3600,g=new Map;for(const a of t.watch){const l=typeof a=="string"?a:a.entity;l&&g.set(l,typeof a=="object"&&a.max_silence>0?a.max_silence*3600:d)}let o=0;for(const[a,l]of g){if(n.some(N=>N.test(a)))continue;o++;const h=s[a];if(!h){r.push({id:a,name:a,reason:"missing",age:NaN});continue}const f=x(h,e);h.state==="unavailable"||h.state==="unknown"?r.push({id:a,name:u(h,a),reason:"unavailable",age:f}):f>l&&r.push({id:a,name:u(h,a),reason:"stale",age:f})}const p=new Set(t.domains);for(const a of Object.keys(s)){const l=s[a],h=a.split(".")[0];if(t.scan_unavailable&&!g.has(a)&&p.has(h)&&!$.has(h)&&!n.some(f=>f.test(a))&&(o++,l.state==="unavailable"&&r.push({id:a,name:u(l,a),reason:"unavailable",age:x(l,e)})),t.battery_threshold>0&&h==="sensor"&&l.attributes&&l.attributes.device_class==="battery"&&!n.some(f=>f.test(a))){const f=b(l.state);Number.isFinite(f)&&f<=t.battery_threshold&&i.push({id:a,name:u(l,a),pct:f})}}return r.sort((a,l)=>(Number.isFinite(l.age)?l.age:1e12)-(Number.isFinite(a.age)?a.age:1e12)),i.sort((a,l)=>a.pct-l.pct),{silent:r,low:i,total:o}}const m={en:{title:"Sensor heartbeat",ok:"All sensors reporting",silent:"silent",nominal:"{n} watched \xB7 all reporting",stale:"no report for {age}",unavailable:"unavailable",missing:"entity not found",batt:"Low batteries",more:"+{n} more",watching:"{n} watched"},fr:{title:"Pouls des capteurs",ok:"Tous les capteurs r\xE9pondent",silent:"muet(s)",nominal:"{n} surveill\xE9s \xB7 tous r\xE9pondent",stale:"aucun rapport depuis {age}",unavailable:"indisponible",missing:"entit\xE9 introuvable",batt:"Piles faibles",more:"+{n} autres",watching:"{n} surveill\xE9s"},de:{title:"Sensor-Herzschlag",ok:"Alle Sensoren melden sich",silent:"stumm",nominal:"{n} \xFCberwacht \xB7 alle melden sich",stale:"kein Bericht seit {age}",unavailable:"nicht verf\xFCgbar",missing:"Entit\xE4t nicht gefunden",batt:"Schwache Batterien",more:"+{n} weitere",watching:"{n} \xFCberwacht"},es:{title:"Pulso de sensores",ok:"Todos los sensores responden",silent:"mudo(s)",nominal:"{n} vigilados \xB7 todos responden",stale:"sin informe desde hace {age}",unavailable:"no disponible",missing:"entidad no encontrada",batt:"Pilas bajas",more:"+{n} m\xE1s",watching:"{n} vigilados"},nl:{title:"Hartslag van sensoren",ok:"Alle sensoren melden zich",silent:"stil",nominal:"{n} bewaakt \xB7 alle melden zich",stale:"geen melding sinds {age}",unavailable:"niet beschikbaar",missing:"entiteit niet gevonden",batt:"Lage batterijen",more:"+{n} meer",watching:"{n} bewaakt"},it:{title:"Battito dei sensori",ok:"Tutti i sensori rispondono",silent:"muto/i",nominal:"{n} monitorati \xB7 tutti rispondono",stale:"nessun rapporto da {age}",unavailable:"non disponibile",missing:"entit\xE0 non trovata",batt:"Batterie scariche",more:"+{n} altri",watching:"{n} monitorati"},pt:{title:"Pulso dos sensores",ok:"Todos os sensores respondem",silent:"mudo(s)",nominal:"{n} monitorizados \xB7 todos respondem",stale:"sem relat\xF3rio h\xE1 {age}",unavailable:"indispon\xEDvel",missing:"entidade n\xE3o encontrada",batt:"Pilhas fracas",more:"+{n} mais",watching:"{n} monitorizados"},pl:{title:"Puls czujnik\xF3w",ok:"Wszystkie czujniki odpowiadaj\u0105",silent:"milczy",nominal:"{n} monitorowanych \xB7 wszystkie odpowiadaj\u0105",stale:"brak raportu od {age}",unavailable:"niedost\u0119pny",missing:"nie znaleziono encji",batt:"S\u0142abe baterie",more:"+{n} wi\u0119cej",watching:"{n} monitorowanych"},ru:{title:"\u041F\u0443\u043B\u044C\u0441 \u0434\u0430\u0442\u0447\u0438\u043A\u043E\u0432",ok:"\u0412\u0441\u0435 \u0434\u0430\u0442\u0447\u0438\u043A\u0438 \u043E\u0442\u0432\u0435\u0447\u0430\u044E\u0442",silent:"\u043C\u043E\u043B\u0447\u0430\u0442",nominal:"{n} \u043F\u043E\u0434 \u043D\u0430\u0431\u043B\u044E\u0434\u0435\u043D\u0438\u0435\u043C \xB7 \u0432\u0441\u0435 \u043E\u0442\u0432\u0435\u0447\u0430\u044E\u0442",stale:"\u043D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u0443\u0436\u0435 {age}",unavailable:"\u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D",missing:"\u0441\u0443\u0449\u043D\u043E\u0441\u0442\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430",batt:"\u0421\u043B\u0430\u0431\u044B\u0435 \u0431\u0430\u0442\u0430\u0440\u0435\u0438",more:"\u0435\u0449\u0451 {n}",watching:"{n} \u043F\u043E\u0434 \u043D\u0430\u0431\u043B\u044E\u0434\u0435\u043D\u0438\u0435\u043C"},zh:{title:"\u4F20\u611F\u5668\u5FC3\u8DF3",ok:"\u6240\u6709\u4F20\u611F\u5668\u5747\u5728\u4E0A\u62A5",silent:"\u9759\u9ED8",nominal:"\u76D1\u63A7 {n} \u4E2A \xB7 \u5168\u90E8\u6B63\u5E38\u4E0A\u62A5",stale:"\u5DF2 {age} \u65E0\u4E0A\u62A5",unavailable:"\u4E0D\u53EF\u7528",missing:"\u672A\u627E\u5230\u5B9E\u4F53",batt:"\u7535\u91CF\u4F4E\u7684\u7535\u6C60",more:"\u53E6\u6709 {n} \u4E2A",watching:"\u76D1\u63A7 {n} \u4E2A"},ar:{title:"\u0646\u0628\u0636 \u0627\u0644\u0645\u0633\u062A\u0634\u0639\u0631\u0627\u062A",ok:"\u062C\u0645\u064A\u0639 \u0627\u0644\u0645\u0633\u062A\u0634\u0639\u0631\u0627\u062A \u062A\u0639\u0645\u0644",silent:"\u0635\u0627\u0645\u062A",nominal:"{n} \u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u0642\u0628\u0629 \xB7 \u0627\u0644\u0643\u0644 \u064A\u0631\u0633\u0644 \u0628\u064A\u0627\u0646\u0627\u062A\u0647",stale:"\u0644\u0627 \u062A\u0642\u0631\u064A\u0631 \u0645\u0646\u0630 {age}",unavailable:"\u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631",missing:"\u0627\u0644\u0643\u064A\u0627\u0646 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F",batt:"\u0628\u0637\u0627\u0631\u064A\u0627\u062A \u0636\u0639\u064A\u0641\u0629",more:"+{n} \u0623\u062E\u0631\u0649",watching:"{n} \u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u0642\u0628\u0629"}};class C extends A{static getStubConfig(){return{watch:[],scan_unavailable:!0,max_silence:2}}normalize(t){const e=b(t.max_silence,2);return{...t,watch:Array.isArray(t.watch)?t.watch:[],ignore:Array.isArray(t.ignore)?t.ignore:[],max_silence:e>0?e:2,scan_unavailable:t.scan_unavailable!==!1,battery_threshold:b(t.battery_threshold,20),max_rows:Math.max(1,Math.round(b(t.max_rows,8))),domains:Array.isArray(t.domains)&&t.domains.length?t.domains:["sensor","binary_sensor","switch","light","climate","cover","lock","fan","media_player","number","select","humidifier","water_heater","vacuum"]}}get tick(){return 6e4}_res(){return _(this._hass?this._hass.states:{},this._cfg)}signature(){const t=this._res();return t.silent.map(e=>e.id+":"+e.reason).join("|")+"#"+t.low.map(e=>e.id+":"+e.pct).join("|")+this._theme()}title(){return this._cfg.title||v(m,this._lang(),"title")}tag(){const t=this._res(),e=this._lang();return t.silent.length?{cls:"bad",text:t.silent.length+" "+v(m,e,"silent")}:{cls:"ok",text:"OK"}}get css(){return`
     .pulse { display:block; width:100%; height:46px; margin:-4px 0 10px; } .pulse path { fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
     .pulse.ok path { stroke:var(--sf-green); filter:drop-shadow(0 0 4px rgb(var(--sf-green-rgb) / .7)); stroke-dasharray:240; animation:beat 2.6s linear infinite; }
     .pulse.bad path { stroke:var(--sf-red); filter:drop-shadow(0 0 4px rgb(var(--sf-red-rgb) / .7)); }
@@ -191,21 +43,4 @@ class SFHeartbeatCard extends SFCard {
     .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--sf-strong); }
     .why { color:var(--sf-dim); font-size:11px; text-align:right; white-space:nowrap; }
     .sub { margin:12px 0 4px; font-family:Orbitron, ui-sans-serif, sans-serif; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--sf-amber); }
-    .more { padding:6px 4px; color:var(--sf-dim); font-size:11px; }`; }
-  body() {
-    const r = this._res(), L = this._lang(), t = (k, v) => sfT(HB_I18N, L, k, v), max = this._cfg.max_rows;
-    const ECG = "M0 24 H70 L82 24 L90 8 L100 40 L108 24 H150 L160 24 L168 14 L176 34 L184 24 H240";
-    let h = `<svg class="pulse ${r.silent.length ? "bad" : "ok"}" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"><path d="${ECG}"/></svg>`;
-    if (!r.silent.length && !r.low.length) return h + `<div class="empty">${sfEsc(t("ok"))}<br><small>${sfEsc(t("nominal", { n: r.total }))}</small></div>`;
-    const row = (cls, id, name, why) => `<div class="row" data-act="info" data-id="${sfEsc(id)}" role="button" tabindex="0"><span class="dot ${cls}"></span><span class="nm">${sfEsc(name)}</span><span class="why">${sfEsc(why)}</span></div>`;
-    for (const s of r.silent.slice(0, max)) h += row(s.reason, s.id, s.name, s.reason === "stale" ? t("stale", { age: sfAge(s.age) }) : s.reason === "missing" ? t("missing") : t("unavailable") + (Number.isFinite(s.age) ? " · " + sfAge(s.age) : ""));
-    if (r.silent.length > max) h += `<div class="more">${sfEsc(t("more", { n: r.silent.length - max }))}</div>`;
-    if (r.low.length) { h += `<div class="sub">${sfEsc(t("batt"))}</div>`; for (const b of r.low.slice(0, max)) h += row("batt", b.id, b.name, Math.round(b.pct) + " %"); }
-    return h;
-  }
-  onAct(el) { if (el.dataset.act === "info") sfMoreInfo(this, el.dataset.id); }
-}
-sfRegister("sf-heartbeat-card", SFHeartbeatCard, "SF Heartbeat", "Lists sensors that stopped reporting (stale, unavailable, missing) and low batteries.");
-window.__sfHeartbeat = { classify: hbClassify, i18n: HB_I18N };   // exposed for the test page only
-
-})();
+    .more { padding:6px 4px; color:var(--sf-dim); font-size:11px; }`}body(){const t=this._res(),e=this._lang(),n=(o,p)=>v(m,e,o,p),r=this._cfg.max_rows;let d=`<svg class="pulse ${t.silent.length?"bad":"ok"}" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"><path d="M0 24 H70 L82 24 L90 8 L100 40 L108 24 H150 L160 24 L168 14 L176 34 L184 24 H240"/></svg>`;if(!t.silent.length&&!t.low.length)return d+`<div class="empty">${c(n("ok"))}<br><small>${c(n("nominal",{n:t.total}))}</small></div>`;const g=(o,p,a,l)=>`<div class="row" data-act="info" data-id="${c(p)}" role="button" tabindex="0"><span class="dot ${o}"></span><span class="nm">${c(a)}</span><span class="why">${c(l)}</span></div>`;for(const o of t.silent.slice(0,r))d+=g(o.reason,o.id,o.name,o.reason==="stale"?n("stale",{age:w(o.age)}):o.reason==="missing"?n("missing"):n("unavailable")+(Number.isFinite(o.age)?" \xB7 "+w(o.age):""));if(t.silent.length>r&&(d+=`<div class="more">${c(n("more",{n:t.silent.length-r}))}</div>`),t.low.length){d+=`<div class="sub">${c(n("batt"))}</div>`;for(const o of t.low.slice(0,r))d+=g("batt",o.id,o.name,Math.round(o.pct)+" %")}return d}onAct(t){t.dataset.act==="info"&&S(this,t.dataset.id)}}z("sf-heartbeat-card",C,"SF Heartbeat","Lists sensors that stopped reporting (stale, unavailable, missing) and low batteries."),window.__sfHeartbeat={classify:_,i18n:m}})();
